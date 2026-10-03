@@ -176,15 +176,20 @@ function PainelCargo(p: { sessao: Sessao; cargo: Cargo; dados: DadosAdmin; estad
           </div>
         </div>
       ) : !ultima ? (
-        <div className="cartao flex flex-wrap items-center justify-between gap-4 p-6">
-          <div>
-            <p className="font-serif text-2xl font-semibold">Pronto para começar</p>
-            <p className="text-navy/60">{estado?.presentes ?? 0} presentes na comissão.</p>
-          </div>
-          <button className="btn-primario px-6 py-3 text-lg" onClick={abrirIndicacao} disabled={acao.ocupado}>
-            <Play size={20} /> Abrir indicação
-          </button>
-        </div>
+        <DefinirVagas
+          key={cargo.id}
+          cargo={cargo}
+          presentes={estado?.presentes ?? 0}
+          ocupado={acao.ocupado}
+          aoAbrir={(vagas, max) =>
+            acao.executar(async () => {
+              if (vagas !== cargo.vagas || max !== cargo.max_indicacoes) {
+                await api.atualizarCargo(cargo.id, { vagas, max_indicacoes: max });
+              }
+              await api.abrirRodada(cargo.id, "indicacao", 1, [], Math.max(1, Math.min(max, vagas - eleitosCargo.length)));
+            })
+          }
+        />
       ) : ultima.status === "aberta" ? (
         <RodadaAberta rodada={ultima} cargo={cargo} dados={dados} estado={estado} />
       ) : (
@@ -213,6 +218,71 @@ function PainelCargo(p: { sessao: Sessao; cargo: Cargo; dados: DadosAdmin; estad
 }
 
 // -------------------------------------------------------------------------------------------
+
+/** Antes da 1ª rodada: confirma (ou define na hora) quantas vagas o cargo terá. */
+function DefinirVagas(p: { cargo: Cargo; presentes: number; ocupado: boolean; aoAbrir: (vagas: number, max: number) => void }) {
+  const { cargo } = p;
+  const [vagas, setVagas] = useState(cargo.vagas);
+  const [max, setMax] = useState(cargo.max_indicacoes);
+  // Indicações por pessoa acompanham as vagas até o moderador mudar à mão.
+  const [maxLigado, setMaxLigado] = useState(cargo.max_indicacoes === cargo.vagas);
+  const varias = vagas > 1;
+  const valido = vagas >= 1 && max >= 1 && max <= vagas;
+
+  const mudarVagas = (v: number) => {
+    const n = Math.max(1, Math.min(99, Math.floor(v) || 1));
+    setVagas(n);
+    if (maxLigado) setMax(n);
+    else if (max > n) setMax(n);
+  };
+
+  return (
+    <div className={`cartao p-6 ${varias ? "border-l-4 border-ouro" : ""}`}>
+      <p className="font-serif text-2xl font-semibold">Pronto para começar</p>
+      <p className="text-navy/60">{p.presentes} presentes na comissão.</p>
+      <div className="mt-5 flex flex-wrap items-end gap-5">
+        <label className="block">
+          <span className="rotulo text-navy/60">Quantas vagas?</span>
+          <div className="mt-1 flex items-center gap-2">
+            <button type="button" className="btn-claro h-12 w-12 p-0 text-xl" onClick={() => mudarVagas(vagas - 1)} aria-label="Menos uma vaga">−</button>
+            <input
+              type="number"
+              min={1}
+              className="campo h-12 w-24 text-center font-serif text-2xl font-semibold"
+              value={vagas}
+              onChange={(e) => mudarVagas(+e.target.value)}
+            />
+            <button type="button" className="btn-claro h-12 w-12 p-0 text-xl" onClick={() => mudarVagas(vagas + 1)} aria-label="Mais uma vaga">+</button>
+          </div>
+        </label>
+        {varias && (
+          <label className="block">
+            <span className="rotulo text-navy/60">Cada membro indica até</span>
+            <input
+              type="number"
+              min={1}
+              max={vagas}
+              className="campo mt-1 block h-12 w-24 text-center font-serif text-2xl font-semibold"
+              value={max}
+              onChange={(e) => {
+                setMaxLigado(false);
+                setMax(Math.max(1, Math.min(vagas, Math.floor(+e.target.value) || 1)));
+              }}
+            />
+          </label>
+        )}
+        <button className="btn-primario ml-auto px-6 py-3 text-lg" onClick={() => p.aoAbrir(vagas, max)} disabled={p.ocupado || !valido}>
+          <Play size={20} /> Abrir indicação{varias ? ` · ${vagas} vagas` : ""}
+        </button>
+      </div>
+      {varias && (
+        <p className="mt-3 text-sm text-navy/60">
+          Quem tiver 80% dos presentes entra direto; as vagas restantes vão para votação.
+        </p>
+      )}
+    </div>
+  );
+}
 
 function RodadaAberta({ rodada, cargo, dados, estado }: { rodada: Rodada; cargo: Cargo; dados: DadosAdmin; estado: Estado | null }) {
   const [votaram, setVotaram] = useState<string[]>([]);
@@ -599,6 +669,7 @@ function OpcoesAvancadas({ cargo, dados, vagasAbertas }: { cargo: Cargo; dados: 
               })}
             </ul>
           </div>
+          <AlterarVagas cargo={cargo} minimo={dados.eleitos.filter((e) => e.cargo_id === cargo.id).length} />
           <div className="flex flex-wrap gap-2">
             {cargo.status !== "concluido" && (
               <button className="btn-claro" onClick={() => acao.executar(() => api.concluirCargo(cargo.id, true))}>
@@ -619,6 +690,41 @@ function OpcoesAvancadas({ cargo, dados, vagasAbertas }: { cargo: Cargo; dados: 
           <Erro texto={acao.erro} />
         </div>
       )}
+    </div>
+  );
+}
+
+function AlterarVagas({ cargo, minimo }: { cargo: Cargo; minimo: number }) {
+  const [vagas, setVagas] = useState(cargo.vagas);
+  const acao = useAcao();
+  useEffect(() => setVagas(cargo.vagas), [cargo.vagas]);
+  const minimoReal = Math.max(1, minimo);
+  return (
+    <div>
+      <p className="font-semibold">Número de vagas</p>
+      <p className="text-sm text-navy/60">A comissão pode mudar o número durante o processo. Não pode ser menor que os já eleitos ({minimo}).</p>
+      <div className="mt-2 flex items-center gap-2">
+        <input
+          type="number"
+          min={minimoReal}
+          className="campo w-24 py-2 text-center"
+          value={vagas}
+          onChange={(e) => setVagas(Math.max(minimoReal, Math.floor(+e.target.value) || minimoReal))}
+        />
+        <button
+          className="btn-claro"
+          disabled={acao.ocupado || vagas === cargo.vagas}
+          onClick={() =>
+            acao.executar(async () => {
+              await api.atualizarCargo(cargo.id, { vagas, max_indicacoes: Math.min(cargo.max_indicacoes === cargo.vagas ? vagas : cargo.max_indicacoes, vagas) });
+              if (minimo < vagas && cargo.status === "concluido") await api.concluirCargo(cargo.id, false);
+            })
+          }
+        >
+          Salvar vagas
+        </button>
+      </div>
+      <Erro texto={acao.erro} />
     </div>
   );
 }

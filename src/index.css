@@ -1,0 +1,26 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root { min-height: 100%; }
+body { @apply bg-papel text-navy font-sans antialiased; }
+
+@layer components {
+  .btn { @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 font-semibold transition disabled:opacity-40 disabled:cursor-not-allowed; }
+  .btn-primario { @apply btn bg-navy text-papel hover:bg-navy-700; }
+  .btn-ouro { @apply btn bg-ouro text-navy-950 hover:bg-ouro-300; }
+  .btn-claro { @apply btn bg-white text-navy ring-1 ring-papel-300 hover:bg-papel-200; }
+  .btn-perigo { @apply btn bg-white text-red-700 ring-1 ring-red-200 hover:bg-red-50; }
+  .campo { @apply w-full rounded-xl border border-papel-300 bg-white px-4 py-3 text-base outline-none focus:border-navy focus:ring-2 focus:ring-navy/15; }
+  .cartao { @apply rounded-2xl bg-white ring-1 ring-papel-300; }
+  .rotulo { @apply text-[11px] font-semibold uppercase tracking-[0.18em]; }
+  .selo-aviso { @apply inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900; }
+}
+
+@keyframes subir { from { transform: translateY(12px); opacity: 0; } to { transform: none; opacity: 1; } }
+.animar-entrada { animation: subir .5s cubic-bezier(.2,.8,.2,1) both; }
+@keyframes pulso { 0%,100% { opacity: 1 } 50% { opacity: .45 } }
+.pulsar { animation: pulso 1.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .animar-entrada, .pulsar { animation: none; }
+}
